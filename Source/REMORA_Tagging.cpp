@@ -74,6 +74,36 @@ REMORA::ErrorEst (int levc, TagBoxArray& tags, Real time, int /*ngrow*/)
           // TODO: we may need to fill physical boundaries here before tagging criteria are imposed
           //
 
+        } else if (ref_tags[j].Field() == "saltgradient" || 
+                   ref_tags[j].Field() == "tempgradient") {
+            
+            MultiFab mf_tracer;
+            // Determine which component to use based on the field type
+            if (ref_tags[j].Field() == "saltgradient") {
+                MultiFab mf_tracer(*cons_new[levc], make_alias, Salt_comp, 1);
+            } else if (ref_tags[j].Field() == "tempgradient") {
+                MultiFab mf_tracer(*cons_new[levc], make_alias, Temp_comp, 1);
+            }
+            
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+            for (MFIter mfi(*mf, TilingIfNotGPU()); mfi.isValid(); ++mfi)
+            {
+                const Box& bx = mfi.tilebox();
+                auto& dfab = (*mf)[mfi];
+                auto& sfab = mf_tracer[mfi];
+                auto pm = vec_pm[levc]->const_array(mfi);
+                auto pn = vec_pn[levc]->const_array(mfi);
+                auto maskr = vec_mskr[levc]->const_array(mfi);
+                derived::remora_derscalarhgrad(bx, dfab, 0, 1, sfab, pm, pn, maskr, Geom(levc), time, nullptr, levc);
+            } // mfi
+
+          mf->FillBoundary(geom[levc].periodicity());
+          //
+          // TODO: we may need to fill physical boundaries here before tagging criteria are imposed
+          //
+
         } else if (ref_tags[j].Field() == "mask") {
             MultiFab::Copy(*mf,*vec_mskr3d[levc],0,0,1,IntVect(1,1,0));
 #ifdef REMORA_USE_PARTICLES

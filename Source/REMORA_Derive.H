@@ -33,6 +33,34 @@ void remora_dervort(
   amrex::Real time,
   const int* bcrec,
   const int level);
+
+void remora_derscalarhgrad(
+  const amrex::Box& bx,
+  amrex::FArrayBox& dremoraab,
+  int dcomp,
+  int ncomp,
+  const amrex::FArrayBox& datfab,
+  const amrex::Array4<const amrex::Real>& pm,
+  const amrex::Array4<const amrex::Real>& pn,
+  const amrex::Array4<const amrex::Real>& maskr,
+  const amrex::Geometry& geomdata,
+  amrex::Real time,
+  const int* bcrec,
+  const int level);
+
+  void remora_derscalarsurfgrad(
+  const amrex::Box& bx,
+  amrex::FArrayBox& dremoraab,
+  int dcomp,
+  int ncomp,
+  const amrex::FArrayBox& datfab,
+  const amrex::Array4<const amrex::Real>& pm,
+  const amrex::Array4<const amrex::Real>& pn,
+  const amrex::Array4<const amrex::Real>& maskr,
+  const amrex::Geometry& geomdata,
+  amrex::Real time,
+  const int* bcrec,
+  const int level);
 }
 #endif
 
