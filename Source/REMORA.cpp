@@ -133,7 +133,11 @@ REMORA::REMORA ()
 
        if (ref_ratio[lev][2] != 1)
        {
-           amrex::Error("We don't allow refinement in the vertical -- make sure to set ref_ratio = 1 in z");
+           amrex::Print() << "********************************************************************************" << std::endl;
+           amrex::Print() << "We don't allow refinement in the vertical -- make sure to set ref_ratio = 1 in z" << std::endl;
+           amrex::Print() << "It's possible you set amr.ref_ratio when you meant to set amr.ref_ratio_vect    " << std::endl;
+           amrex::Print() << "********************************************************************************" << std::endl;
+           amrex::Abort();
        }
     }
 }
@@ -909,7 +913,8 @@ REMORA::init_only (int lev, Real time)
         if (nc_frc_file.empty()) {
             amrex::Error("NetCDF forcing file name must be provided via input for longwave radiation");
         }
-        longwave_down_data_from_file = new NCTimeSeries(nc_frc_file, "longwave_down", frc_time_varname, geom[lev].Domain(), vec_longwave_down[lev].get(), true, false);
+            longwave_down_data_from_file = new NCTimeSeries(nc_frc_file, solverChoice.longwave_netcdf_varname, frc_time_varname,
+                                                            geom[lev].Domain(), vec_longwave_down[lev].get(), true, false);
         longwave_down_data_from_file->Initialize();
     }
 
