@@ -21,7 +21,7 @@ using namespace amrex;
 /**
  * @param which_step   current step for output
  */
-void REMORA::WriteNCPlotFile(int which_step) {
+void REMORA::WriteNCPlotFile(int which_step, MultiFab const* plotMF) {
     AMREX_ASSERT(max_level == 0);
     // For right now we assume single level -- we will generalize this later to multilevel
     int lev = 0;
@@ -84,7 +84,7 @@ void REMORA::WriteNCPlotFile(int which_step) {
 
         amrex::Print() << "Writing into level " << lev << " NetCDF history file " << FullPath << std::endl;
 
-        WriteNCPlotFile_which(lev, which_subdomain, write_header, ncf, is_history);
+        WriteNCPlotFile_which(lev, which_subdomain, plotMF, write_header, ncf, is_history);
 
     } else {
 
@@ -95,7 +95,7 @@ void REMORA::WriteNCPlotFile(int which_step) {
         auto ncf = ncutils::NCFile::create(FullPath, NC_CLOBBER|NC_64BIT_DATA, amrex::ParallelContext::CommunicatorSub(), MPI_INFO_NULL);
         amrex::Print() << "Writing level " << lev << " NetCDF plot file " << FullPath << std::endl;
 
-        WriteNCPlotFile_which(lev, which_subdomain, write_header, ncf, is_history);
+        WriteNCPlotFile_which(lev, which_subdomain, plotMF, write_header, ncf, is_history);
     }
 }
 
@@ -106,7 +106,9 @@ void REMORA::WriteNCPlotFile(int which_step) {
  * @param ncf               netcdf file object
  * @param is_history        whether the file being written is a history file
  */
-void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_header, ncutils::NCFile &ncf, bool is_history) {
+void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, MultiFab const* plotMF,
+                                   bool write_header, ncutils::NCFile &ncf, bool is_history)
+{
     // Number of cells in this "domain" at this level
     std::vector<int> n_cells;
 
@@ -124,10 +126,21 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
     int ny = subdomain.length(1);
     int nz = subdomain.length(2);
 
-    // unsigned long int nt= NC_UNLIMITED;
-    if (is_history && max_step < 0)
+    if (is_history && max_step < 0) {
         amrex::Abort("Need to know max_step if writing history file");
-    long long int nt = is_history ? static_cast<long long int>(max_step / std::min(plot_int, max_step)) + 1 : 1;
+    }
+
+    long long int nt;
+    if (is_history) {
+        if (max_step > 0) {
+            nt = static_cast<long long int>(max_step / std::min(plot_int, max_step)) + 1;
+        } else {
+            nt = 1;
+        }
+    } else {
+        nt = 1;
+    }
+
     if (chunk_history_file) {
         // First index of the last history file
         int last_file_index = REMORA::steps_per_history_file * int(nt / REMORA::steps_per_history_file);
@@ -336,30 +349,70 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
         ncf.var("zeta").put_attr("coordinates","x_rho y_rho ocean_time");
         ncf.var("zeta").put_attr("field","free-surface, scalar, series");
 
-        ncf.def_var_fill("temp", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
-        ncf.var("temp").put_attr("long_name","potential temperature");
-        ncf.var("temp").put_attr("units","Celsius");
-        ncf.var("temp").put_attr("time","ocean_time");
-        ncf.var("temp").put_attr("grid","grid");
-        ncf.var("temp").put_attr("location","face");
-        ncf.var("temp").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
-        ncf.var("temp").put_attr("field","temperature, scalar, series");
+        {
+            int comp = -1;
+            for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                if (plot_var_names_3d[i] == "temp") comp = i;
+            }
+            if (comp >= 0) {
+                ncf.def_var_fill("temp", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
+                ncf.var("temp").put_attr("long_name","potential temperature");
+                ncf.var("temp").put_attr("units","Celsius");
+                ncf.var("temp").put_attr("time","ocean_time");
+                ncf.var("temp").put_attr("grid","grid");
+                ncf.var("temp").put_attr("location","face");
+                ncf.var("temp").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
+                ncf.var("temp").put_attr("field","temperature, scalar, series");
+            }
+        } // end temp
 
-        ncf.def_var_fill("salt", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
-        ncf.var("salt").put_attr("long_name","salinity");
-        ncf.var("salt").put_attr("time","ocean_time");
-        ncf.var("salt").put_attr("grid","grid");
-        ncf.var("salt").put_attr("location","face");
-        ncf.var("salt").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
-        ncf.var("salt").put_attr("field","salinity, scalar, series");
+        {
+            int comp = -1;
+            for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                if (plot_var_names_3d[i] == "salt") comp = i;
+            }
+            if (comp >= 0) {
+                ncf.def_var_fill("salt", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
+                ncf.var("salt").put_attr("long_name","salinity");
+                ncf.var("salt").put_attr("time","ocean_time");
+                ncf.var("salt").put_attr("grid","grid");
+                ncf.var("salt").put_attr("location","face");
+                ncf.var("salt").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
+                ncf.var("salt").put_attr("field","salinity, scalar, series");
+            }
+        } // end salt
 
-        ncf.def_var_fill("tracer", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
-        ncf.var("tracer").put_attr("long_name","passive tracer");
-        ncf.var("tracer").put_attr("time","ocean_time");
-        ncf.var("tracer").put_attr("grid","grid");
-        ncf.var("tracer").put_attr("location","face");
-        ncf.var("tracer").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
-        ncf.var("tracer").put_attr("field","tracer, scalar, series");
+        {
+            int comp = -1;
+            for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                if (plot_var_names_3d[i] == "tracer") comp = i;
+            }
+            if (comp >= 0) {
+                ncf.def_var_fill("tracer", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
+                ncf.var("tracer").put_attr("long_name","passive tracer");
+                ncf.var("tracer").put_attr("time","ocean_time");
+                ncf.var("tracer").put_attr("grid","grid");
+                ncf.var("tracer").put_attr("location","face");
+                ncf.var("tracer").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
+                ncf.var("tracer").put_attr("field","tracer, scalar, series");
+            }
+        } // end tracer
+
+        {
+            int comp = -1;
+            for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                if (plot_var_names_3d[i] == "vorticity") comp = i;
+            }
+            if (comp >= 0) {
+               ncf.def_var_fill("vorticity", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_r_name, nx_r_name }, &fill_value);
+               ncf.var("vorticity").put_attr("long_name","vorticity");
+               ncf.var("vorticity").put_attr("time","ocean_time");
+               ncf.var("vorticity").put_attr("grid","grid");
+               ncf.var("vorticity").put_attr("location","face");
+               ncf.var("vorticity").put_attr("coordinates","x_rho y_rho s_rho ocean_time");
+               ncf.var("vorticity").put_attr("field","vorticity, scalar, series");
+            }
+        } // end vorticity
 
         ncf.def_var_fill("u", ncutils::NCDType::Real, { nt_name, nz_r_name, ny_u_name, nx_u_name }, &fill_value);
         ncf.var("u").put_attr("long_name","u-momentum component");
@@ -415,6 +468,107 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
         ncf.var("svstr").put_attr("coordinates","x_v y_v ocean_time");
         ncf.var("svstr").put_attr("field","surface v-momentum stress, scalar, series");
 
+        if (solverChoice.output_forcing) {
+            // Surface air temperature (Celsius)
+            ncf.def_var("Tair", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("Tair").put_attr("long_name","surface air temperature");
+            ncf.var("Tair").put_attr("units","Celsius");
+            ncf.var("Tair").put_attr("time","ocean_time");
+            ncf.var("Tair").put_attr("grid","grid");
+            ncf.var("Tair").put_attr("location","face");
+            ncf.var("Tair").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("Tair").put_attr("field","Tair, scalar, series");
+
+            // Surface air pressure (Pascal)
+            ncf.def_var("Pair", ncutils::NCDType::Real,{ nt_name, ny_r_name, nx_r_name });
+            ncf.var("Pair").put_attr("long_name","surface air pressure");
+            ncf.var("Pair").put_attr("units","Pascal");
+            ncf.var("Pair").put_attr("time","ocean_time");
+            ncf.var("Pair").put_attr("grid","grid");
+            ncf.var("Pair").put_attr("location","face");
+            ncf.var("Pair").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("Pair").put_attr("field","Pair, scalar, series");
+
+            // Surface net heat flux (W/m2)
+            ncf.def_var("qnet", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("qnet").put_attr("long_name","surface net heat flux");
+            ncf.var("qnet").put_attr("units","watt meter-2");
+            ncf.var("qnet").put_attr("time","ocean_time");
+            ncf.var("qnet").put_attr("grid","grid");
+            ncf.var("qnet").put_attr("location","face");
+            ncf.var("qnet").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("qnet").put_attr("field","surface heat flux, scalar, series");
+
+            // Surface net salt flux (kinematic)
+            ncf.def_var("ssflux", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("ssflux").put_attr("long_name","kinematic surface net salt flux, SALT*(E-P)/rhow");
+            ncf.var("ssflux").put_attr("units","meter second-1");
+            ncf.var("ssflux").put_attr("time","ocean_time");
+            ncf.var("ssflux").put_attr("grid","grid");
+            ncf.var("ssflux").put_attr("location","face");
+            ncf.var("ssflux").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("ssflux").put_attr("field","surface net salt flux, scalar, series");
+
+            // Latent heat flux (W/m2)
+            ncf.def_var("latent", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("latent").put_attr("long_name","net latent heat flux");
+            ncf.var("latent").put_attr("units","watt meter-2");
+            ncf.var("latent").put_attr("time","ocean_time");
+            ncf.var("latent").put_attr("grid","grid");
+            ncf.var("latent").put_attr("location","face");
+            ncf.var("latent").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("latent").put_attr("field","latent heat flux, scalar, series");
+
+            // Sensible heat flux (W/m2)
+            ncf.def_var("sensible", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("sensible").put_attr("long_name","net sensible heat flux");
+            ncf.var("sensible").put_attr("units","watt meter-2");
+            ncf.var("sensible").put_attr("time","ocean_time");
+            ncf.var("sensible").put_attr("grid","grid");
+            ncf.var("sensible").put_attr("location","face");
+            ncf.var("sensible").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("sensible").put_attr("field","sensible heat flux, scalar, series");
+
+            // Longwave radiation (W/m2)
+            ncf.def_var("lwrad", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("lwrad").put_attr("long_name","net longwave radiation flux");
+            ncf.var("lwrad").put_attr("units","watt meter-2");
+            ncf.var("lwrad").put_attr("time","ocean_time");
+            ncf.var("lwrad").put_attr("grid","grid");
+            ncf.var("lwrad").put_attr("location","face");
+            ncf.var("lwrad").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("lwrad").put_attr("field","longwave radiation, scalar, series");
+
+            // Shortwave radiation (W/m2)
+            ncf.def_var("swrad", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("swrad").put_attr("long_name","solar shortwave radiation flux");
+            ncf.var("swrad").put_attr("units","watt meter-2");
+            ncf.var("swrad").put_attr("time","ocean_time");
+            ncf.var("swrad").put_attr("grid","grid");
+            ncf.var("swrad").put_attr("location","face");
+            ncf.var("swrad").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("swrad").put_attr("field","shortwave radiation, scalar, series");
+
+            // Evaporation rate (kg m-2 s-1)
+            ncf.def_var("evaporation", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("evaporation").put_attr("long_name","evaporation rate");
+            ncf.var("evaporation").put_attr("units","kilogram meter-2 second-1");
+            ncf.var("evaporation").put_attr("time","ocean_time");
+            ncf.var("evaporation").put_attr("grid","grid");
+            ncf.var("evaporation").put_attr("location","face");
+            ncf.var("evaporation").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("evaporation").put_attr("field","evaporation, scalar, series");
+
+            // Rain rate (kg m-2 s-1)
+            ncf.def_var("rain", ncutils::NCDType::Real, {nt_name, ny_r_name, nx_r_name });
+            ncf.var("rain").put_attr("long_name","rain fall rate");
+            ncf.var("rain").put_attr("units","kilogram meter-2 second-1");
+            ncf.var("rain").put_attr("time","ocean_time");
+            ncf.var("rain").put_attr("grid","grid");
+            ncf.var("rain").put_attr("location","face");
+            ncf.var("rain").put_attr("coordinates","x_rho y_rho ocean_time");
+            ncf.var("rain").put_attr("field","rain, scalar, series");
+        }
         // Right now this is hard-wired to {temp, salt, tracer, u, v}
         ncf.put_attr("space_dimension", std::vector<int> { AMREX_SPACEDIM });
 //        ncf.put_attr("current_time", std::vector<double> { time });
@@ -515,21 +669,19 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
     // do all independent writes
     //ncmpi_end_indep_data(ncf.ncid);
 
-    cons_new[lev]->FillBoundary(geom[lev].periodicity());
-
     mask_arrays_for_write(lev, (Real) fill_value, 0.0_rt);
 
     // Check whether there are any nans or infs in variables that we will write out
     if (vec_Zt_avg1[lev]->contains_nan() || vec_Zt_avg1[lev]->contains_inf()) {
         amrex::Abort("Found while writing output: zeta contains nan or inf");
     }
-    if (cons_new[lev]->contains_nan(Temp_comp,1) || cons_new[lev]->contains_inf(Temp_comp,1)) {
+    if (plotMF->contains_nan(Temp_comp,1) || plotMF->contains_inf(Temp_comp,1)) {
         amrex::Abort("Found while writing output: Temperature contains nan or inf");
     }
-    if (cons_new[lev]->contains_nan(Salt_comp,1) || cons_new[lev]->contains_inf(Salt_comp,1)) {
+    if (plotMF->contains_nan(Salt_comp,1) || plotMF->contains_inf(Salt_comp,1)) {
         amrex::Abort("Found while writing output: Salinity contains nan or inf");
     }
-    if (cons_new[lev]->contains_nan(Scalar_comp,1) || cons_new[lev]->contains_inf(Scalar_comp,1)) {
+    if (plotMF->contains_nan(Tracer_comp,1) || plotMF->contains_inf(Tracer_comp,1)) {
         amrex::Abort("Found while writing output: Passive tracer contains nan or inf");
     }
     if (xvel_new[lev]->contains_nan() || xvel_new[lev]->contains_inf()) {
@@ -545,7 +697,7 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
         amrex::Abort("Found while writing output: velocity vbar contains nan or inf");
     }
 
-    for (MFIter mfi(*cons_new[lev], false); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(*plotMF, false); mfi.isValid(); ++mfi) {
         auto bx = mfi.validbox();
         if (subdomain.contains(bx)) {
             //
@@ -731,38 +883,231 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
                         local_nx });
             }
 
+            if (solverChoice.output_forcing)
             {
-                FArrayBox tmp_temp;
-                tmp_temp.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
-                tmp_temp.template copy<RunOn::Device>((*cons_new[lev])[mfi.index()], Temp_comp, 0, 1);
-                Gpu::streamSynchronize();
+                const Real Hscale = solverChoice.rho0 * Cp;
+                // Tair
+                {
+                    FArrayBox tmp_Tair;
+                    tmp_Tair.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp_Tair.template copy<RunOn::Device>((*vec_Tair[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
 
-                auto nc_plot_var = ncf.var("temp");
-                nc_plot_var.put(tmp_temp.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
-                        local_nz, local_ny, local_nx });
-            }
+                    auto nc_plot_var = ncf.var("Tair");
+                    nc_plot_var.put(tmp_Tair.dataPtr(), { local_start_nt, local_start_y, local_start_x }, { local_nt, local_ny, local_nx });
+                }
+                // Pair
+                {
+                    FArrayBox tmp_Pair;
+                    tmp_Pair.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp_Pair.template copy<RunOn::Device>((*vec_Pair[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
 
-            {
-                FArrayBox tmp_salt;
-                tmp_salt.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
-                tmp_salt.template copy<RunOn::Device>((*cons_new[lev])[mfi.index()], Salt_comp, 0, 1);
-                Gpu::streamSynchronize();
+                    auto nc_plot_var = ncf.var("Pair");
+                    nc_plot_var.put(tmp_Pair.dataPtr(), { local_start_nt, local_start_y, local_start_x }, { local_nt, local_ny, local_nx });
+                }
+                // qnet  (stored °C m/s → write W/m²)
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
 
-                auto nc_plot_var = ncf.var("salt");
-                nc_plot_var.put(tmp_salt.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
-                        local_nz, local_ny, local_nx });
-            }
+                    // Copy stflux Temp component
+                    tmp.template copy<RunOn::Device>(
+                        (*vec_stflux[lev])[mfi.index()],
+                        Temp_comp,  // source component
+                        0,          // dest component
+                        1           // number of comps
+                    );
 
-            {
-                FArrayBox tmp_tracer;
-                tmp_tracer.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
-                tmp_tracer.template copy<RunOn::Device>((*cons_new[lev])[mfi.index()], Scalar_comp, 0, 1);
-                Gpu::streamSynchronize();
+                    Gpu::streamSynchronize();
 
-                auto nc_plot_var = ncf.var("tracer");
-                nc_plot_var.put(tmp_tracer.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
-                        local_nz, local_ny, local_nx });
-            }
+                    // Convert °C·m/s → W/m²
+                    tmp.mult<RunOn::Device>(Hscale);
+
+                    auto nc_var = ncf.var("qnet");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // ssflux = surface net freshwater flux (kg/m²/s converted to m/s)
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+
+                    // Copy stflux Salt component
+                    tmp.template copy<RunOn::Device>(
+                        (*vec_stflux[lev])[mfi.index()],
+                        Salt_comp, // source component
+                        0,         // destination component
+                        1          // number of components
+                    );
+
+                    Gpu::streamSynchronize();
+
+                    auto nc_var = ncf.var("ssflux");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // latent  (stored °C m/s → write W/m²)
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*vec_lhflx[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    // Convert °C·m/s → W/m²
+                    tmp.mult<RunOn::Device>(Hscale);
+
+                    auto nc_var = ncf.var("latent");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // sensible  (stored °C m/s → write W/m²)
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*vec_shflx[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    // Convert °C·m/s → W/m²
+                    tmp.mult<RunOn::Device>(Hscale);
+
+                    auto nc_var = ncf.var("sensible");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // lwrad  (stored °C m/s → write W/m²)
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*vec_lrflx[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    // Convert °C·m/s → W/m²
+                    tmp.mult<RunOn::Device>(Hscale);
+
+                    auto nc_var = ncf.var("lwrad");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // swrad, note this is stored explicitly as W/m², not degC m/s in REMORA.bulk_flux.cpp
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*vec_srflx[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_var = ncf.var("swrad");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // evaporation
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*vec_evap[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_var = ncf.var("evaporation");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+                // rain
+                {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*vec_rain[lev])[mfi.index()], 0, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_var = ncf.var("rain");
+                    nc_var.put(tmp.dataPtr(),
+                            { local_start_nt, local_start_y, local_start_x },
+                            { local_nt,       local_ny,       local_nx });
+                }
+            } // end output forcing
+
+            // **************************************************************************
+            { // Temp
+                int comp = -1;
+                for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                    if (plot_var_names_3d[i] == "temp") comp = i;
+                }
+                if (comp >= 0) {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*plotMF)[mfi.index()], comp, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_plot_var = ncf.var(plot_var_names_3d[comp]);
+                    nc_plot_var.put(tmp.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
+                            local_nz, local_ny, local_nx });
+                } // if temp exists in plotMF
+            } // end temp
+            // **************************************************************************
+
+            // **************************************************************************
+            { // Salt
+                int comp = -1;
+                for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                    if (plot_var_names_3d[i] == "salt") comp = i;
+                }
+                if (comp >= 0) {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*plotMF)[mfi.index()], comp, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_plot_var = ncf.var(plot_var_names_3d[comp]);
+                    nc_plot_var.put(tmp.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
+                            local_nz, local_ny, local_nx });
+                } // if salt exists in plotMF
+            } // end salt
+            // **************************************************************************
+
+            // **************************************************************************
+            { // Tracer
+                int comp = -1;
+                for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                    if (plot_var_names_3d[i] == "tracer") comp = i;
+                }
+                if (comp >= 0) {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*plotMF)[mfi.index()], comp, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_plot_var = ncf.var(plot_var_names_3d[comp]);
+                    nc_plot_var.put(tmp.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
+                            local_nz, local_ny, local_nx });
+                } // if tracer exists in plotMF
+            } // end tracer
+            // **************************************************************************
+
+            // **************************************************************************
+            { // Vorticity
+                int comp = -1;
+                for (int i = 0; i < plot_var_names_3d.size(); i++) {
+                    if (plot_var_names_3d[i] == "vorticity") comp = i;
+                }
+                if (comp >= 0) {
+                    FArrayBox tmp;
+                    tmp.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
+                    tmp.template copy<RunOn::Device>((*plotMF)[mfi.index()], comp, 0, 1);
+                    Gpu::streamSynchronize();
+
+                    auto nc_plot_var = ncf.var(plot_var_names_3d[comp]);
+                    nc_plot_var.put(tmp.dataPtr(), { local_start_nt, local_start_z, local_start_y, local_start_x }, { local_nt,
+                            local_nz, local_ny, local_nx });
+                } // if vorticity exists in plotMF
+            } // end vorticity
+            // **************************************************************************
+
         } // subdomain
     } // mfi
 
@@ -770,7 +1115,7 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
     //requests.resize(0);
     //irq = 0;
     // Writing u (we loop over cons to get cell-centered box)
-    for (MFIter mfi(*cons_new[lev], false); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(*plotMF, false); mfi.isValid(); ++mfi) {
         Box bx = mfi.validbox();
 
         if (subdomain.contains(bx)) {
@@ -854,7 +1199,7 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
     } // mfi
 
     // Writing v (we loop over cons to get cell-centered box)
-    for (MFIter mfi(*cons_new[lev], false); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(*plotMF, false); mfi.isValid(); ++mfi) {
         Box bx = mfi.validbox();
 
         if (subdomain.contains(bx)) {
@@ -886,7 +1231,7 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
             long long local_start_z = static_cast<long long>(tmp_bx.smallEnd()[2]);
 
             if (write_header) {
-            {
+                {
                 FArrayBox tmp;
                 tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
                 tmp.template copy<RunOn::Device>((*vec_xv[lev])[mfi.index()], 0, 0, 1);
@@ -895,8 +1240,8 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
                 auto nc_plot_var = ncf.var("x_v");
                 //nc_plot_var.par_access(NC_INDEPENDENT);
                 nc_plot_var.put(tmp.dataPtr(), { local_start_y, local_start_x }, { local_ny, local_nx });
-            }
-            {
+                }
+                {
                 FArrayBox tmp;
                 tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
                 tmp.template copy<RunOn::Device>((*vec_yv[lev])[mfi.index()], 0, 0, 1);
@@ -905,9 +1250,9 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
                 auto nc_plot_var = ncf.var("y_v");
                 //nc_plot_var.par_access(NC_INDEPENDENT);
                 nc_plot_var.put(tmp.dataPtr(), { local_start_y, local_start_x }, { local_ny, local_nx });
+                }
             }
 
-            }
             {
                 FArrayBox tmp;
                 tmp.resize(tmp_bx, 1, amrex::The_Pinned_Arena());
@@ -928,6 +1273,7 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
                 auto nc_plot_var = ncf.var("vbar");
                 nc_plot_var.put(tmp.dataPtr(), { local_start_nt, local_start_y, local_start_x }, { local_nt, local_ny, local_nx });
             }
+
             {
                 FArrayBox tmp;
                 tmp.resize(tmp_bx_2d, 1, amrex::The_Pinned_Arena());
@@ -941,7 +1287,7 @@ void REMORA::WriteNCPlotFile_which(int lev, int which_subdomain, bool write_head
         } // in subdomain
     } // mfi
 
-    for (MFIter mfi(*cons_new[lev], false); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(*plotMF, false); mfi.isValid(); ++mfi) {
         Box bx = mfi.validbox();
 
         if (subdomain.contains(bx)) {

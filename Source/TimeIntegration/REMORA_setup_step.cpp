@@ -180,8 +180,23 @@ REMORA::setup_step (int lev, Real time, Real dt_lev)
     const Real Cdb_min = solverChoice.Cdb_min;
     const Real Cdb_max = solverChoice.Cdb_max;
 
+    if (solverChoice.longwave_netcdf_is_net && !solverChoice.longwave_down_from_netcdf) {
+        amrex::Abort("remora.longwave_netcdf_is_net=true requires remora.longwave_down_from_netcdf=true");
+    }
+
+    if (solverChoice.longwave_down && !solverChoice.longwave_down_from_netcdf) {
+        amrex::Abort("remora.longwave_down=true currently requires remora.longwave_down_from_netcdf=true");
+    }
+
+    MultiFab* lw_ptr = nullptr;
+
+    if (solverChoice.longwave_down_from_netcdf)
+        lw_ptr = vec_longwave_down[lev].get();
     if (solverChoice.bulk_fluxes) {
         bulk_fluxes(lev, cons_old[lev],vec_uwind[lev].get(),vec_vwind[lev].get(),
+                    vec_Tair[lev].get(),vec_qair[lev].get(),vec_Pair[lev].get(),
+                    vec_srflx[lev].get(),
+                    lw_ptr,
                     vec_evap[lev].get(),
                     vec_sustr[lev].get(),vec_svstr[lev].get(),vec_stflux[lev].get(),
                     vec_lrflx[lev].get(),vec_lhflx[lev].get(),vec_shflx[lev].get(),N);
@@ -322,8 +337,8 @@ REMORA::setup_step (int lev, Real time, Real dt_lev)
 #ifdef REMORA_USE_NETCDF
     // Get u and v climatology if we're going to do nudging
     if (solverChoice.do_m3_clim_nudg) {
-        u_clim_data_from_file->update_interpolated_to_time(t_new[lev]);
-        v_clim_data_from_file->update_interpolated_to_time(t_new[lev]);
+        u_clim_data_from_file->update_interpolated_to_time(t_new[lev], lev, xvel_new[lev], geom, ref_ratio);
+        v_clim_data_from_file->update_interpolated_to_time(t_new[lev], lev, yvel_new[lev], geom, ref_ratio);
     }
 #endif
 
@@ -434,8 +449,8 @@ REMORA::setup_step (int lev, Real time, Real dt_lev)
 
         t3dmix(bx, s_arr, s_arr_rhs, diff2_arr, Hz, pm, pn, msku, mskv, dt_lev, ncomp);
 
-        Array4<Real> const& diff2_arr_scalar = vec_diff2[lev]->array(mfi,Scalar_comp);
-        t3dmix(bx, S_new.array(mfi,Scalar_comp), S_old.array(mfi,Scalar_comp), diff2_arr_scalar, Hz, pm, pn, msku, mskv, dt_lev, 1);
+        Array4<Real> const& diff2_arr_scalar = vec_diff2[lev]->array(mfi,Tracer_comp);
+        t3dmix(bx, S_new.array(mfi,Tracer_comp), S_old.array(mfi,Tracer_comp), diff2_arr_scalar, Hz, pm, pn, msku, mskv, dt_lev, 1);
 
         if (solverChoice.use_coriolis) {
             //-----------------------------------------------------------------------
@@ -449,8 +464,8 @@ REMORA::setup_step (int lev, Real time, Real dt_lev)
 
 #ifdef REMORA_USE_NETCDF
         if (solverChoice.do_m3_clim_nudg) {
-            Array4<const Real> const& uclim = u_clim_data_from_file->mf_interpolated->const_array(mfi);
-            Array4<const Real> const& vclim = v_clim_data_from_file->mf_interpolated->const_array(mfi);
+            Array4<const Real> const& uclim = u_clim_data_from_file->get_interpolated_mf(lev)->const_array(mfi);
+            Array4<const Real> const& vclim = v_clim_data_from_file->get_interpolated_mf(lev)->const_array(mfi);
             Array4<const Real> const& u_nudg_coeff = vec_nudg_coeff[BdyVars::u][lev]->const_array(mfi);
             Array4<const Real> const& v_nudg_coeff = vec_nudg_coeff[BdyVars::v][lev]->const_array(mfi);
             // These boxes are set to match ROMS

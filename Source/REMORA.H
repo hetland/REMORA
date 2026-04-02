@@ -182,7 +182,7 @@ public:
     amrex::MultiFab& build_fine_mask(int lev);
 
     /** \brief main driver for writing AMReX plotfiles */
-    void WritePlotFile ();
+    void WritePlotFile (int istep);
 
     /** \brief write out particular data to an AMReX plotfile */
     void WriteMultiLevelPlotfileWithBathymetry (const std::string &plotfilename,
@@ -192,10 +192,13 @@ public:
                                                 const amrex::Vector<const amrex::MultiFab*> &mf_u,
                                                 const amrex::Vector<const amrex::MultiFab*> &mf_v,
                                                 const amrex::Vector<const amrex::MultiFab*> &mf_w,
-                                                const amrex::Vector<const amrex::MultiFab*> &mf_2drho,
-                                                const amrex::Vector<const amrex::MultiFab*> &mf_2du,
-                                                const amrex::Vector<const amrex::MultiFab*> &mf_2dv,
-                                                const amrex::Vector<std::string> &varnames,
+                                                const amrex::Vector<const amrex::MultiFab*> &mf_2d_rho,
+                                                const amrex::Vector<const amrex::MultiFab*> &mf_2d_u,
+                                                const amrex::Vector<const amrex::MultiFab*> &mf_2d_v,
+                                                const amrex::Vector<std::string> &varnames_3d,
+                                                const amrex::Vector<std::string> &varnames_2d_rho,
+                                                const amrex::Vector<std::string> &varnames_2d_u,
+                                                const amrex::Vector<std::string> &varnames_2d_v,
                                                 const amrex::Vector<amrex::Geometry>& my_geom,
                                                 amrex::Real time,
                                                 const amrex::Vector<int> &level_steps,
@@ -210,7 +213,10 @@ public:
     void WriteGenericPlotfileHeaderWithBathymetry (std::ostream &HeaderFile,
                                                    int nlevels,
                                                    const amrex::Vector<amrex::BoxArray> &bArray,
-                                                   const amrex::Vector<std::string> &varnames,
+                                                   const amrex::Vector<std::string> &varnames_3d,
+                                                   const amrex::Vector<std::string> &varnames_2d_rho,
+                                                   const amrex::Vector<std::string> &varnames_2d_u,
+                                                   const amrex::Vector<std::string> &varnames_2d_v,
                                                    const amrex::Vector<amrex::Geometry>& my_geom,
                                                    amrex::Real time,
                                                    const amrex::Vector<int> &level_steps,
@@ -222,7 +228,7 @@ public:
     /** \brief default prefix for input file parameters */
     std::string pp_prefix {"remora"};
 
-    /** \brief multilevel data container for last step's scalar data: temperature, salinity, passive scalar  */
+    /** \brief multilevel data container for last step's scalar data: temperature, salinity, passive tracer  */
     amrex::Vector<amrex::MultiFab*> cons_old;
     /** \brief multilevel data container for last step's x velocities (u in ROMS) */
     amrex::Vector<amrex::MultiFab*> xvel_old;
@@ -231,7 +237,7 @@ public:
     /** \brief multilevel data container for last step's z velocities (largely unused; W stored separately) */
     amrex::Vector<amrex::MultiFab*> zvel_old;
 
-    /** \brief multilevel data container for current step's scalar data: temperature, salinity, passive scalar  */
+    /** \brief multilevel data container for current step's scalar data: temperature, salinity, passive tracer  */
     amrex::Vector<amrex::MultiFab*> cons_new;
     /** \brief multilevel data container for current step's x velocities (u in ROMS) */
     amrex::Vector<amrex::MultiFab*> xvel_new;
@@ -310,9 +316,19 @@ public:
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_uwind;
     /** \brief Wind in the v direction, defined at rho-points */
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_vwind;
+    /** \brief Air temperature [°C], defined at rho-points */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_Tair;
+    /** \brief Specific humidity [kg/kg], defined at rho-points */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_qair;
+    /** \brief Air pressure [mb], defined at rho-points */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_Pair;
 
+    /** \brief Shortwave radiation flux [W/m²], defined at rho-points */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_srflx;
     /** \brief longwave radiation */
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_lrflx;
+    /** \brief Downward longwave radiation */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_longwave_down;
     /** \brief latent heat flux */
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_lhflx;
     /** \brief sensible heat flux */
@@ -331,6 +347,10 @@ public:
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_rain;
     /** \brief evaporation rate [kg/m^2/s] */
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_evap;
+    /** \brief cloud cover fraction [0-1], defined at rho-points */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_cloud;
+    /** \brief evaporation minus precipitation [kg/m^2/s], defined at rho-points */
+    amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_EminusP;
 
     /** \brief Linear drag coefficient [m/s], defined at rho points */
     amrex::Vector<std::unique_ptr<amrex::MultiFab>> vec_rdrag;
@@ -516,6 +536,11 @@ public:
                       amrex::MultiFab* mf_cons,
                       amrex::MultiFab* mf_uwind,
                       amrex::MultiFab* mf_vwind,
+                      amrex::MultiFab* mf_Tair,
+                      amrex::MultiFab* mf_qair,
+                      amrex::MultiFab* mf_Pair,
+                      amrex::MultiFab* mf_srflx,
+                      amrex::MultiFab* mf_longwave_down,
                       amrex::MultiFab* mf_evap,
                       amrex::MultiFab* mf_sustr,
                       amrex::MultiFab* mf_svstr,
@@ -1035,16 +1060,20 @@ private:
     std::string PlotFileName (int lev) const;
 
     /* set which variables and derived quantities go into plotfiles */
-    void setPlotVariables (const std::string& pp_plot_var_names);
+    void set2DPlotVariables (const std::string& pp_plot_var_names_2d);
+    void set3DPlotVariables (const std::string& pp_plot_var_names_3d);
 
     /* append variables to plot */
-    void appendPlotVariables (const std::string& pp_plot_var_names);
+    void append2DPlotVariables (const std::string& pp_plot_var_names_2d);
+    void append3DPlotVariables (const std::string& pp_plot_var_names_3d);
 
 #ifdef REMORA_USE_NETCDF
     /** \brief Write plotfile using NetCDF (wrapper) */
-    void WriteNCPlotFile       (int istep);
+    void WriteNCPlotFile       (int istep, amrex::MultiFab const* plotMF);
+
     /** \brief Write a particular NetCDF plotfile */
     void WriteNCPlotFile_which (int lev, int which_subdomain,
+                                amrex::MultiFab const* plotMF,
                                 bool write_header, ncutils::NCFile& ncf,
                                 bool is_history);
 
@@ -1075,6 +1104,22 @@ private:
     NCTimeSeries* Uwind_data_from_file;
     /** \brief Data container for v-direction wind read from file */
     NCTimeSeries* Vwind_data_from_file;
+    /** \brief Data container for air temperature read from file */
+    NCTimeSeries* Tair_data_from_file;
+    /** \brief Data container for specific humidity read from file */
+    NCTimeSeries* qair_data_from_file;
+    /** \brief Data container for air pressure read from file */
+    NCTimeSeries* Pair_data_from_file;
+    /** \brief Data container for shortwave radiation flux read from file */
+    NCTimeSeries* srflx_data_from_file;
+    /** \brief Data container for downward longwave radiation flux read from file */
+    NCTimeSeries* longwave_down_data_from_file;
+    /** \brief Data container for precipitation rate read from file */
+    NCTimeSeries* rain_data_from_file;
+    /** \brief Data container for cloud cover fraction read from file */
+    NCTimeSeries* cloud_data_from_file;
+    /** \brief Data container for evaporation minus precipitation read from file */
+    NCTimeSeries* EminusP_data_from_file;
 
     /** \brief Data container for ubar climatology data read from file */
     NCTimeSeries* ubar_clim_data_from_file;
@@ -1277,10 +1322,12 @@ private:
     /** \brief Counter for which time index we are writing to in the netcdf history file */
     int history_count = 0;
 
-    /** \brief Names of variables to output to AMReX plotfile */
-    amrex::Vector<std::string> plot_var_names;
+    /** \brief Names of 3D variables to output to AMReX plotfile */
+    amrex::Vector<std::string> plot_var_names_3d;
+    /** \brief Names of 2D variables to output to AMReX plotfile */
+    amrex::Vector<std::string> plot_var_names_2d;
     /** \brief Names of scalars for plotfile output */
-    const amrex::Vector<std::string>     cons_names {"temp", "salt", "scalar"};
+    const amrex::Vector<std::string>     cons_names {"temp", "salt", "tracer"};
     // Note that the order of variable names here must match the order in PlotFile.cpp
     /** \brief Names of derived fields for plotfiles */
     const amrex::Vector<std::string> derived_names {"vorticity"};
@@ -1328,9 +1375,6 @@ private:
 
     /** \brief Whether to write the staggered velocities (not averaged to cell centers) */
     static int plot_staggered_vels;
-
-    /** \brief Whether to write 2D plotfile variables */
-    static int plot_2d_vars;
 
     /** \brief Native or NetCDF plotfile output */
     static PlotfileType plotfile_type;

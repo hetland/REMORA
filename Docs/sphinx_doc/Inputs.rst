@@ -85,7 +85,7 @@ Other versions of NetCDF files can be converted to 64-bit NetCDF classic by runn
 
     ncks -5 old_file.nc converted_file.nc
 
-The utility ``ncks`` is part of the `NCO <https://nco.sourceforge.net>`_ suite.
+The utility ``ncks`` is part of the NCO suite.
 
 Currently, if initial or grid files are specified, they both must be. Boundary condition options with NetCDF boundary data are equivalent to ROMS clamped, Chapman-Flather, and Orlanski + Nudging boundary conditions. Options and examples can be found in the section on :ref:`Domain Boundary Conditions <sec:domainBCs>`.
 
@@ -915,13 +915,70 @@ List of Bulk Fluxes parameters
 |                                  |                                        |                   |                |
 |                                  |                                        | Values            |                |
 +==================================+========================================+===================+================+
-| **remora.air_temperature**       | Air temperature [C]                    | Real number       | 23.567         |
+| **remora.air_temperature**       | Air temperature [C] (used as           | Real number       | 23.567         |
+|                                  |                                        |                   |                |
+|                                  | uniform value if                       |                   |                |
+|                                  |                                        |                   |                |
+|                                  | **Tair_from_netcdf** is false)         |                   |                |
 +----------------------------------+----------------------------------------+-------------------+----------------+
 | **remora.air_humidity**          | Relative humidity of air               | Real number       | 0.776          |
 |                                  |                                        |                   |                |
-|                                  |                                        | from 0 to 1       |                |
+|                                  | (used as uniform value if              | from 0 to 1       |                |
+|                                  |                                        |                   |                |
+|                                  | **qair_from_netcdf** is false)         |                   |                |
 +----------------------------------+----------------------------------------+-------------------+----------------+
-| **remora.air_pressure**          | Air pressure [hPa]                     | Real number       | 1013.48        |
+| **remora.air_pressure**          | Air pressure [hPa] (used as            | Real number       | 1013.48        |
+|                                  |                                        |                   |                |
+|                                  | uniform value if                       |                   |                |
+|                                  |                                        |                   |                |
+|                                  | **Pair_from_netcdf** is false)         |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.surface_radiation_flux**| Shortwave radiation flux [W/m^2]       | Real number       | 0.0            |
+|                                  |                                        |                   |                |
+|                                  | (used as uniform value if              |                   |                |
+|                                  |                                        |                   |                |
+|                                  | **srflx_from_netcdf** is false)        |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.Tair_from_netcdf**      | Load air temperature from NetCDF       | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | file (spatially varying)               |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.qair_from_netcdf**      | Load air humidity from NetCDF          | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | file (spatially varying)               |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.qair_is_percent**       | Convert qair from percentage           | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | (0-100) to fraction (0-1).             |                   |                |
+|                                  |                                        |                   |                |
+|                                  | Only used if                           |                   |                |
+|                                  |                                        |                   |                |
+|                                  | **qair_from_netcdf** is true           |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.Pair_from_netcdf**      | Load air pressure from NetCDF          | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | file (spatially varying)               |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.srflx_from_netcdf**     | Load shortwave radiation flux          | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | from NetCDF file                       |                   |                |
+|                                  |                                        |                   |                |
+|                                  | (spatially varying)                    |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.longwave_down**         | Use file-provided downward longwave    | true / false      | false          |
+|                                  | radiation to compute net longwave      |                   |                |
+|                                  | (``Lnet = Ldown - sigma*epsilon*T^4``) |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.longwave_down_from_netcdf** | Load longwave field from NetCDF    | true / false      | false          |
+|                                  | file (spatially varying)               |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.longwave_netcdf_is_net**| Interpret the NetCDF longwave field    | true / false      | false          |
+|                                  | as net longwave (use as-is). If false, |                   |                |
+|                                  | interpret as downward longwave and     |                   |                |
+|                                  | compute net in the bulk flux routine   |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.longwave_netcdf_varname** | Name of the NetCDF longwave variable | String            | ``lwrad``      |
+|                                  | in ``remora.nc_frc_file``              |                   |                |
 +----------------------------------+----------------------------------------+-------------------+----------------+
 | **remora.blk_ZQ**                | Height [m] of atmospheric              | Real number       | 10.0           |
 |                                  |                                        |                   |                |
@@ -943,9 +1000,31 @@ List of Bulk Fluxes parameters
 +----------------------------------+----------------------------------------+-------------------+----------------+
 | **remora.cloud**                 | Cloud cover fraction (0=clear sky,     | Real number       | 0.0            |
 |                                  |                                        |                   |                |
-|                                  | 1=overcast)                            | from 0 to 1       |                |
+|                                  | 1=overcast) (used as uniform           | from 0 to 1       |                |
+|                                  |                                        |                   |                |
+|                                  | value if **cloud_from_netcdf**         |                   |                |
+|                                  |                                        |                   |                |
+|                                  | is false)                              |                   |                |
 +----------------------------------+----------------------------------------+-------------------+----------------+
 | **remora.rain**                  | Precipitation rate [kg/m^2/s]          | Real number       | 0.0            |
+|                                  |                                        |                   |                |
+|                                  | (used as uniform value if              |                   |                |
+|                                  |                                        |                   |                |
+|                                  | **rain_from_netcdf** is false)         |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.cloud_from_netcdf**     | Load cloud cover from NetCDF           | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | file (spatially varying)               |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.rain_from_netcdf**      | Load precipitation rate from           | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | NetCDF file (spatially varying)        |                   |                |
++----------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.EminusP_from_netcdf**   | Load evaporation minus                 | true / false      | false          |
+|                                  |                                        |                   |                |
+|                                  | precipitation from NetCDF file         |                   |                |
+|                                  |                                        |                   |                |
+|                                  | (spatially varying)                    |                   |                |
 +----------------------------------+----------------------------------------+-------------------+----------------+
 | **remora.eminusp**               | Whether to do E-P prescription for     | true / false      | false          |
 |                                  |                                        |                   |                |
@@ -957,6 +1036,31 @@ List of Bulk Fluxes parameters
 |                                  |                                        |                   |                |
 |                                  | and precipitation                      |                   |                |
 +----------------------------------+----------------------------------------+-------------------+----------------+
+
+.. note::
+
+   When loading atmospheric forcing variables from NetCDF files (by setting
+   **Tair_from_netcdf**, **qair_from_netcdf**, **Pair_from_netcdf**,
+   **srflx_from_netcdf**, **longwave_down_from_netcdf**,
+   **rain_from_netcdf**, **cloud_from_netcdf**, or **EminusP_from_netcdf**
+   to true), these variables are read from the file
+   specified by **remora.nc_frc_file** (see :ref:`list-of-parameters surface-forcing`).
+   The NetCDF file must contain variables named ``Tair``, ``qair``, ``Pair``,
+   ``swrad``, ``rain``, ``cloud``, and ``EminusP`` respectively, with the same
+   spatial dimensions as the model grid.
+   Time interpolation is performed automatically based on the simulation time.
+
+   For longwave forcing, the variable name is controlled by
+   **remora.longwave_netcdf_varname** (default ``lwrad``).
+   If **remora.longwave_netcdf_is_net** is true, that variable is treated as
+   net longwave radiation and used directly. If false, it is treated as
+   downward longwave radiation and net longwave is computed in the bulk-flux
+   routine using sea-surface temperature and emissivity.
+
+   The **qair_is_percent** flag should be set to true if the relative humidity
+   in the NetCDF file is stored as a percentage (0-100) rather than as a
+   fraction (0-1). This conversion is applied after loading and includes proper
+   ghost cell synchronization.
 
 Numerical Algorithms
 ====================

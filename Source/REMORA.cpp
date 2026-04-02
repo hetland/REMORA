@@ -37,9 +37,6 @@ int         REMORA::file_min_digits = 5;
 // Do we include staggered velocities in the plotfile?
 int         REMORA::plot_staggered_vels = 0;
 
-// Do we include 2d variables in plotfile
-int         REMORA::plot_2d_vars = 0;
-
 // Native AMReX vs NetCDF
 PlotfileType REMORA::plotfile_type    = PlotfileType::amrex;
 
@@ -88,7 +85,9 @@ REMORA::REMORA ()
     }
 
     ReadParameters();
-    const std::string& pv1 = "plot_vars"; setPlotVariables(pv1);
+
+    const std::string& pv3d = "plot_vars_3d"; set3DPlotVariables(pv3d);
+    const std::string& pv2d = "plot_vars_2d"; set2DPlotVariables(pv2d);
 
     prob = amrex_probinit(geom[0].ProbLo(),geom[0].ProbHi());
 
@@ -134,7 +133,11 @@ REMORA::REMORA ()
 
        if (ref_ratio[lev][2] != 1)
        {
-           amrex::Error("We don't allow refinement in the vertical -- make sure to set ref_ratio = 1 in z");
+           amrex::Print() << "********************************************************************************" << std::endl;
+           amrex::Print() << "We don't allow refinement in the vertical -- make sure to set ref_ratio = 1 in z" << std::endl;
+           amrex::Print() << "It's possible you set amr.ref_ratio when you meant to set amr.ref_ratio_vect    " << std::endl;
+           amrex::Print() << "********************************************************************************" << std::endl;
+           amrex::Abort();
        }
     }
 }
@@ -172,20 +175,13 @@ REMORA::Evolve ()
         amrex::Print() << "Coarse STEP " << step+1 << " ends." << " TIME = " << cur_time
                        << " DT = " << dt[0]  << std::endl;
 
-        if ((plot_int > 0 && (step+1 - last_plot_file_step) == plot_int)
-                || (plot_int_time > 0 && cur_time >= (last_plot_file_time + plot_int_time))) {
+        if ( (plot_int > 0      && (step+1 - last_plot_file_step) == plot_int         ) ||
+             (plot_int_time > 0 && (cur_time >= (last_plot_file_time + plot_int_time))) )
+        {
             last_plot_file_step = step+1;
             last_plot_file_time = cur_time;
-            if (plotfile_type == PlotfileType::amrex) {
-
-                WritePlotFile();
-            }
-#ifdef REMORA_USE_NETCDF
-            else if (plotfile_type == PlotfileType::netcdf) {
-                WriteNCPlotFile(step+1);
-                history_count++;
-            }
-#endif
+            WritePlotFile(step+1);
+            history_count++;
         }
 
         if ((check_int > 0 && (step+1 - last_check_file_step) == check_int)
@@ -208,16 +204,10 @@ REMORA::Evolve ()
         if (cur_time >= stop_time - 1.e-6*dt[0]) break;
     }
 
-    if ((plot_int > 0 || plot_int_time > 0.0) && istep[0] > last_plot_file_step) {
-        if (plotfile_type == PlotfileType::amrex) {
-            WritePlotFile();
-        }
-#ifdef REMORA_USE_NETCDF
-        if (plotfile_type == PlotfileType::netcdf) {
-            WriteNCPlotFile(istep[0]);
-            history_count++;
-        }
-#endif
+    if ( (plot_int > 0 || plot_int_time > 0.0) && istep[0] > last_plot_file_step)
+    {
+        WritePlotFile(istep[0]);
+        history_count++;
     }
 
     if ((check_int > 0 || check_int_time > 0.0) && istep[0] > last_check_file_step) {
@@ -335,7 +325,8 @@ REMORA::InitData ()
 
     // Check for additional plotting variables that are available after
     // particle containers are setup.
-    const std::string& pv1 = "plot_vars"; appendPlotVariables(pv1);
+    const std::string& pv3d = "plot_vars_3d"; append3DPlotVariables(pv3d);
+    const std::string& pv2d = "plot_vars_2d"; append2DPlotVariables(pv2d);
 
     if (restart_chkfile == "" && (check_int > 0 || check_int_time > 0.0_rt))
     {
@@ -348,15 +339,9 @@ REMORA::InitData ()
     {
         if (plot_int > 0 || plot_int_time > 0.0)
         {
-            if (plotfile_type == PlotfileType::amrex)
-                WritePlotFile();
-#ifdef REMORA_USE_NETCDF
-            if (plotfile_type == PlotfileType::netcdf) {
-                int step0 = 0;
-                WriteNCPlotFile(step0);
-                history_count++;
-            }
-#endif
+            int step0 = 0;
+            WritePlotFile(step0);
+            history_count++;
             last_plot_file_step = istep[0];
         }
     }
@@ -702,8 +687,8 @@ REMORA::set_smflux(int lev)
         prob->init_analytic_smflux(lev, geom[lev], solverChoice, *this,*vec_sustr[lev], *vec_svstr[lev]);
     } else if (solverChoice.smflux_type == SMFluxType::netcdf) {
 #ifdef REMORA_USE_NETCDF
-        sustr_data_from_file->update_interpolated_to_time(t_old[lev]);
-        svstr_data_from_file->update_interpolated_to_time(t_old[lev]);
+        sustr_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_sustr[lev].get(), geom, ref_ratio);
+        svstr_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_svstr[lev].get(), geom, ref_ratio);
         FillPatch(lev, t_old[lev], *vec_sustr[lev], GetVecOfPtrs(vec_sustr),BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
         FillPatch(lev, t_old[lev], *vec_svstr[lev], GetVecOfPtrs(vec_svstr),BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
 #endif
@@ -721,14 +706,65 @@ REMORA::set_wind(int lev)
         prob->init_analytic_wind(lev,geom[lev], solverChoice, *this, *vec_uwind[lev], *vec_vwind[lev]);
     } else if (solverChoice.wind_type == WindType::netcdf) {
 #ifdef REMORA_USE_NETCDF
-        Uwind_data_from_file->update_interpolated_to_time(t_old[lev]);
-        Vwind_data_from_file->update_interpolated_to_time(t_old[lev]);
-        FillPatch(lev, t_old[lev], *vec_uwind[lev], GetVecOfPtrs(vec_uwind),BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
-        FillPatch(lev, t_old[lev], *vec_vwind[lev], GetVecOfPtrs(vec_vwind),BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        Uwind_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_uwind[lev].get(), geom, ref_ratio);
+        Vwind_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_vwind[lev].get(), geom, ref_ratio);
+        FillPatch(lev, t_old[lev], *vec_uwind[lev], GetVecOfPtrs(vec_uwind),
+                  BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        FillPatch(lev, t_old[lev], *vec_vwind[lev], GetVecOfPtrs(vec_vwind),
+                  BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+
+        // Conditionally update atmospheric fields if loaded from NetCDF
+        if (solverChoice.Tair_from_netcdf) {
+            Tair_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_Tair[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_Tair[lev], GetVecOfPtrs(vec_Tair),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
+        if (solverChoice.qair_from_netcdf) {
+            qair_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_qair[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_qair[lev], GetVecOfPtrs(vec_qair),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+
+            // Convert qair from percentage (0-100) to specific humidity (0-1) if needed
+            if (solverChoice.qair_is_percent) {
+                vec_qair[lev]->mult(0.01);
+
+                // Update ghost cells after modification
+                vec_qair[lev]->FillBoundary(geom[lev].periodicity());
+            }
+        }
+        if (solverChoice.Pair_from_netcdf) {
+            Pair_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_Pair[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_Pair[lev], GetVecOfPtrs(vec_Pair),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
+        if (solverChoice.srflx_from_netcdf) {
+            srflx_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_srflx[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_srflx[lev], GetVecOfPtrs(vec_srflx),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
+        if (solverChoice.longwave_down_from_netcdf) {
+            longwave_down_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_longwave_down[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_longwave_down[lev], GetVecOfPtrs(vec_longwave_down),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
+        if (solverChoice.rain_from_netcdf) {
+            rain_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_rain[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_rain[lev], GetVecOfPtrs(vec_rain),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
+        if (solverChoice.cloud_from_netcdf) {
+            cloud_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_cloud[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_cloud[lev], GetVecOfPtrs(vec_cloud),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
+        if (solverChoice.EminusP_from_netcdf) {
+            EminusP_data_from_file->update_interpolated_to_time(t_old[lev], lev, vec_EminusP[lev].get(), geom, ref_ratio);
+            FillPatch(lev, t_old[lev], *vec_EminusP[lev], GetVecOfPtrs(vec_EminusP),
+                      BCVars::foextrap_periodic_bc,BdyVars::null,0,false);
+        }
 #endif
     }
 }
-
 /**
  * @param[in   ] lev    level to operate on
  */
@@ -790,7 +826,7 @@ REMORA::init_only (int lev, Real time)
     if (solverChoice.ic_type == IC_Type::netcdf) {
         init_clim_nudg_coeff(lev);
 
-        if (solverChoice.do_any_clim_nudg) {
+        if (solverChoice.do_any_clim_nudg && lev == 0) {
             if (nc_clim_his_file.empty()) {
                 amrex::Error("NetCDF climatology file name must be provided via input");
             }
@@ -826,7 +862,7 @@ REMORA::init_only (int lev, Real time)
     }
 
     // This will be a non-op if forcings specified analytically
-    if (solverChoice.wind_type == WindType::netcdf) {
+    if (solverChoice.wind_type == WindType::netcdf && lev == 0) {
         if (nc_frc_file.empty()) {
             amrex::Error("NetCDF forcing file name must be provided via input for winds");
         }
@@ -834,7 +870,37 @@ REMORA::init_only (int lev, Real time)
         Vwind_data_from_file = new NCTimeSeries(nc_frc_file, "Vwind", frc_time_varname, geom[lev].Domain(),vec_vwind[lev].get(), true, false);
         Uwind_data_from_file->Initialize();
         Vwind_data_from_file->Initialize();
-    } else if (solverChoice.smflux_type == SMFluxType::netcdf) {
+
+        // Conditionally load atmospheric forcing fields from NetCDF based on user flags
+        if (solverChoice.Tair_from_netcdf) {
+            Tair_data_from_file = new NCTimeSeries(nc_frc_file, "Tair", frc_time_varname, geom[lev].Domain(),vec_Tair[lev].get(), true, false);
+            Tair_data_from_file->Initialize();
+        }
+        if (solverChoice.qair_from_netcdf) {
+            qair_data_from_file = new NCTimeSeries(nc_frc_file, "qair", frc_time_varname, geom[lev].Domain(),vec_qair[lev].get(), true, false);
+            qair_data_from_file->Initialize();
+        }
+        if (solverChoice.Pair_from_netcdf) {
+            Pair_data_from_file = new NCTimeSeries(nc_frc_file, "Pair", frc_time_varname, geom[lev].Domain(),vec_Pair[lev].get(), true, false);
+            Pair_data_from_file->Initialize();
+        }
+        if (solverChoice.srflx_from_netcdf) {
+            srflx_data_from_file = new NCTimeSeries(nc_frc_file, "swrad", frc_time_varname, geom[lev].Domain(),vec_srflx[lev].get(), true, false);
+            srflx_data_from_file->Initialize();
+        }
+        if (solverChoice.rain_from_netcdf) {
+            rain_data_from_file = new NCTimeSeries(nc_frc_file, "rain", frc_time_varname, geom[lev].Domain(),vec_rain[lev].get(), true, false);
+            rain_data_from_file->Initialize();
+        }
+        if (solverChoice.cloud_from_netcdf) {
+            cloud_data_from_file = new NCTimeSeries(nc_frc_file, "cloud", frc_time_varname, geom[lev].Domain(),vec_cloud[lev].get(), true, false);
+            cloud_data_from_file->Initialize();
+        }
+        if (solverChoice.EminusP_from_netcdf) {
+            EminusP_data_from_file = new NCTimeSeries(nc_frc_file, "EminusP", frc_time_varname, geom[lev].Domain(),vec_EminusP[lev].get(), true, false);
+            EminusP_data_from_file->Initialize();
+        }
+    } else if (solverChoice.smflux_type == SMFluxType::netcdf && lev == 0) {
         if (nc_frc_file.empty()) {
             amrex::Error("NetCDF forcing file name must be provided via input for surface momentum fluxes");
         }
@@ -842,6 +908,14 @@ REMORA::init_only (int lev, Real time)
         svstr_data_from_file = new NCTimeSeries(nc_frc_file, "svstr", frc_time_varname, geom[lev].Domain(),vec_svstr[lev].get(), true, false);
         sustr_data_from_file->Initialize();
         svstr_data_from_file->Initialize();
+    }
+    if (solverChoice.longwave_down_from_netcdf && lev == 0) {
+        if (nc_frc_file.empty()) {
+            amrex::Error("NetCDF forcing file name must be provided via input for longwave radiation");
+        }
+            longwave_down_data_from_file = new NCTimeSeries(nc_frc_file, solverChoice.longwave_netcdf_varname, frc_time_varname,
+                                                            geom[lev].Domain(), vec_longwave_down[lev].get(), true, false);
+        longwave_down_data_from_file->Initialize();
     }
 
     if (solverChoice.do_rivers) {
@@ -857,9 +931,9 @@ REMORA::init_only (int lev, Real time)
             river_source_cons[Temp_comp] = new NCTimeSeriesRiver(nc_riv_file, "river_temp", riv_time_varname, nz);
             river_source_cons[Temp_comp]->Initialize();
         }
-        if (solverChoice.do_rivers_cons[Scalar_comp]) {
-            river_source_cons[Scalar_comp] = new NCTimeSeriesRiver(nc_riv_file, "river_scalar", riv_time_varname, nz);
-            river_source_cons[Scalar_comp]->Initialize();
+        if (solverChoice.do_rivers_cons[Tracer_comp]) {
+            river_source_cons[Tracer_comp] = new NCTimeSeriesRiver(nc_riv_file, "river_scalar", riv_time_varname, nz);
+            river_source_cons[Tracer_comp]->Initialize();
         }
         river_source_transport = new NCTimeSeriesRiver(nc_riv_file, "river_transport", riv_time_varname, nz);
         river_source_transport->Initialize();
@@ -1046,8 +1120,6 @@ REMORA::ReadParameters ()
 
         // Should we plot the staggered face velocities (without averaging to cell centers)
         pp.queryAdd("plot_staggered_vels", plot_staggered_vels);
-
-        pp.query("plot_2d_vars", plot_2d_vars);
 
         // Output format
         std::string plotfile_type_str = "amrex";
