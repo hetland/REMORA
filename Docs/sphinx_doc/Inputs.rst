@@ -112,7 +112,7 @@ Grid and Initial Data on Refined Levels
 
 Grid and initial data files are read on level 0 only, from ``remora.nc_grid_file_0`` and ``remora.nc_init_file_0``; keys for other levels, such as ``remora.nc_grid_file_1``, are not used. By default, every field on a refined level -- bathymetry, ``pm`` and ``pn``, the land-sea mask, Coriolis, and the initial state -- is interpolated from the next coarser level. A grid file can also say where to refine, with an optional ``refinement`` variable; see :ref:`Refinement From the Grid File <sec:GridFileRefinement>`.
 
-A spherical grid file also carries ``lon_rho``, ``lat_rho`` and ``angle`` (the angle in radians from east to the xi axis, as ROMS defines it). When present they are read with the other grid variables and interpolated to the refined levels; when absent the run proceeds without them. They can be written to plotfiles as the 2D variables ``lon_rho``, ``lat_rho`` and ``angle``, and the NetCDF history file carries them whenever they are available. With ``remora.hires_grid_level`` set they are read from ``remora.nc_grid_file_hires`` instead and averaged down like ``pm`` and ``pn``; longitude and angle are first made continuous across any branch cut, so a coarse cell straddling the dateline takes a longitude near 180 rather than 0, and the averaged longitude may then lie outside [-180, 180).
+A spherical grid file also carries ``lon_rho``, ``lat_rho`` and ``angle`` (the angle in radians from east to the xi axis, as ROMS defines it). When present they are read with the other grid variables and interpolated bilinearly to the refined levels, with longitude and angle interpolated across any branch cut rather than through the jump; each refined value keeps the branch of its nearest coarse value, so the cut falls where it does on the coarser level. When absent the run proceeds without them. They can be written to plotfiles as the 2D variables ``lon_rho``, ``lat_rho`` and ``angle``, and the NetCDF history file carries them whenever they are available. With ``remora.hires_grid_level`` set they are read from ``remora.nc_grid_file_hires`` instead and averaged down like ``pm`` and ``pn``; longitude and angle are first made continuous across any branch cut, so a coarse cell straddling the dateline takes a longitude near 180 rather than 0, and the averaged longitude may then lie outside [-180, 180).
 
 Higher-resolution data can instead be given for the whole domain at one refined level, separately for the grid and the initial state:
 
@@ -1883,6 +1883,15 @@ Additional bulk-flux controls:
 | **remora.bulk_flux_current_factor**  | Fraction of the surface current        | 0 to 1            | 1.0            |
 |                                      | subtracted from the wind               |                   |                |
 +--------------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.shortwave_penetration**     | Absorb the shortwave over depth with   | true / false      | false          |
+|                                      | a Jerlov profile (ROMS                 |                   |                |
+|                                      | ``SOLAR_SOURCE``) instead of in the    |                   |                |
+|                                      | top cell                               |                   |                |
++--------------------------------------+----------------------------------------+-------------------+----------------+
+| **remora.jerlov_type**               | Jerlov water type of the absorption    | I, IA, IB, II,    | I              |
+|                                      | profile                                | III, 1C, 3C, 5C,  |                |
+|                                      |                                        | 7C                |                |
++--------------------------------------+----------------------------------------+-------------------+----------------+
 
 With **remora.bulk_flux_relative_wind**, the wind in the bulk flux is the wind less
 **remora.bulk_flux_current_factor** times the top-level current, averaged to the rho
@@ -1900,6 +1909,24 @@ region. Keep the factor at 1 only when the atmosphere itself takes its surface s
 relative to the current. **remora.bulk_flux_current_factor** without
 **remora.bulk_flux_relative_wind** is rejected, as is the relative wind under a
 coupling driver that passes fluxes, since REMORA then computes no bulk fluxes.
+
+With **remora.shortwave_penetration**, the shortwave part of the surface heat flux is
+absorbed over depth instead of entirely in the top cell, as with ROMS's ``SOLAR_SOURCE``.
+The fraction reaching depth :math:`d` below the surface is the Paulson and Simpson (1977)
+double exponential
+
+.. math::
+
+   r_1 e^{-d/\mu_1} + (1 - r_1) e^{-d/\mu_2},
+
+with :math:`r_1`, :math:`\mu_1` and :math:`\mu_2` set by **remora.jerlov_type**: the
+oceanic Jerlov water types I (clearest), IA, IB, II and III, and the coastal types 1C, 3C,
+5C and 7C (most turbid), with the coefficients of ROMS's ``lmd_swfrac``. The temperature
+of each cell changes by the difference between the shortwave reaching its top and its
+bottom faces; what reaches the sea floor stays in the bottom cell, so the column's heat
+content is unchanged. The shortwave comes from the bulk flux forcing or, under a
+coupling driver that passes fluxes, from the atmosphere, and the option is rejected when
+neither provides it. It applies to temperature only.
 
 The rest of the bulk flux follows myROMS's ``bulk_flux.F`` whatever the COARE
 version: the buoyancy flux in the gustiness, the vector stress normalized by the

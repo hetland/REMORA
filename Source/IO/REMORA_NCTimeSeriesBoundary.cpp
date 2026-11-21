@@ -390,11 +390,16 @@ NCTimeSeriesBoundary::add_tides (double time)
  */
 void NCTimeSeriesBoundary::update_interpolated_to_time (double time)
 {
+    BL_PROFILE("NCTimeSeriesBoundary::update_interpolated_to_time()");
     // Nothing in the file for this variable, so there is nothing to read or
     // interpolate. Returning here also keeps the reader from announcing that it is
     // reading a variable the file does not contain: the caller updates every tracer
     // in one sweep, and most of them are typically on a local boundary condition.
     if (m_sides.empty()) {
+        return;
+    }
+    // The strips are already at this time; callers only read them
+    if (have_interp && interp_time == time) {
         return;
     }
 
@@ -488,6 +493,8 @@ void NCTimeSeriesBoundary::update_interpolated_to_time (double time)
     }
 
     add_tides(time);
+    have_interp = true;
+    interp_time = time;
 }
 
 /**
@@ -537,6 +544,7 @@ void
 NCTimeSeriesBoundary::read_in_at_time (std::array<amrex::FArrayBox, AMREX_SPACEDIM*2>& fabs,
                                        int itime)
 {
+    BL_PROFILE("NCTimeSeriesBoundary::read_in_at_time()");
     // The host writes below land in pinned fabs that queued kernels may still be
     // reading in place, so drain the stream first
     amrex::Gpu::streamSynchronize();

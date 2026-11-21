@@ -135,6 +135,11 @@ say the baseline was right, and it cannot notice a feature that has silently sto
     1e-11. For an invariant between two code paths, such as a driver that must reproduce another at a
     degenerate setting, or output frequency not changing the answer. Needs no gold file.
 
+``add_test_r_selfdiffer``
+    Run one input twice under two sets of command-line options and require both plotfiles to exist and
+    to *differ* beyond 1e-11. For an option whose point is to change the answer, without a gold file: an
+    option that silently does nothing makes the runs agree.
+
 ``add_test_restart``
     Run an input to the end with a checkpoint partway, restart a second run from the named checkpoint,
     and require the two final plotfiles to agree: a restart must continue the run it was saved from.
@@ -191,6 +196,11 @@ rather than assumed.
   refinement ratios 1 to 4, every fine cell center (the strip's end cells included) and every fine
   node must reproduce a linear profile exactly, using only coarse points inside the strip. It needs
   no NetCDF, so it runs in every build.
+- ``REMORA_StaggeredBilinear_test.cpp`` (ctest ``StaggeredBilinear``) tests the bilinear value used to
+  interpolate grid coordinates onto a refined level, in ``REMORA_StaggeredBilinear.H``: a bilinear field
+  is reproduced exactly, extrapolation included, and a longitude or angle crossing a branch cut (the date
+  line, the prime meridian in [0, 360), pi) gives the continuous field's value on the branch of the
+  nearest coarse value. It needs no NetCDF, so it runs in every build.
 - ``REMORA_Biology_test.cpp`` (ctest ``BiologyInterface``) tests the biology interface in
   ``Source/Biology`` without running the model: the tracers Fennel and ECB declare and their order,
   finding a tracer's state component by name, configuring each model from its ROMS defaults, constant and
