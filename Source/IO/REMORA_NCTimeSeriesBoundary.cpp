@@ -344,6 +344,8 @@ NCTimeSeriesBoundary::InitializeTides (
             Gpu::streamSynchronize();
         }
     }
+    // Strips interpolated before now hold no tides, so the next update must redo them
+    have_interp = false;
     if (verbose) {
         Print() << "Boundary tides use fixed amplitudes and phases: " << nconstituents
                 << " constituents for " << field_name << " from " << file_name << '\n';
@@ -352,6 +354,9 @@ NCTimeSeriesBoundary::InitializeTides (
 
 /**
  * \brief Add the ROMS set_tides.F harmonic sum to the subtidal boundary reference.
+ *
+ * Called only by update_interpolated_to_time, after the strips are interpolated afresh. A
+ * repeated time returns before both, so the sum is computed once per new time.
  *
  * @param[in   ] time  requested boundary time in seconds on the model clock
  */
