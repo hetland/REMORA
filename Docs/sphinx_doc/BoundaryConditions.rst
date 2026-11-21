@@ -177,15 +177,22 @@ Conventions
 ~~~~~~~~~~~
 
 The harmonic sum follows `ROMS set_tides.F
-<https://github.com/myroms/roms/blob/develop/ROMS/Nonlinear/set_tides.F>`_: the time argument,
-the phase lag in degrees, and the elevation averaged onto the boundary face. REMORA departs from
-ROMS in three ways:
+<https://github.com/myroms/roms/blob/develop/ROMS/Nonlinear/set_tides.F>`_ in its time argument
+and its phase lag in degrees. ROMS averages the two elevations next to each boundary face; REMORA
+does no averaging and reads elevation harmonics that are already at the face (see
+:ref:`File layout <sec:tidal-file-layout>`). REMORA also departs from ROMS in these ways:
 
 - **Sides.** ROMS adds tides wherever the boundary data is read, clamped sides included.
 - **Velocity harmonics.** ROMS builds tidal velocities from tidal-ellipse parameters for both
   components. REMORA reads amplitudes and phases of the normal velocity only.
 - **Adding to the file values.** ROMS replaces the boundary values with the tide unless it is
   built with ``ADD_FSOBC``/``ADD_M2OBC``. REMORA always adds the tide to the subtidal values.
+- **Start-up ramp.** With ``RAMP_TIDES``, ROMS multiplies the tide by
+  :math:`\tanh((t - t_{\mathrm{start}})/1\,\mathrm{day})`. REMORA applies the full tide from the
+  first step.
+- **Nodal corrections.** With ``TIDES_ASTRO``, ROMS applies nodal amplitude factors and
+  astronomical phase arguments computed from the date. REMORA uses the file's amplitudes and
+  phases unchanged, so any nodal correction must already be in them.
 
 The sum is
 
@@ -235,6 +242,8 @@ model directions before writing the file. Neither velocity uses an outward-norma
 Its value is in days, as for REMORA's other NetCDF times; zero selects the date in the units.
 The epoch is placed on the model clock using ``remora.time_ref`` and does not reset at restart.
 If supplied, ``calendar`` must agree with the model calendar. The reference date uses UTC.
+
+.. _sec:tidal-file-layout:
 
 File layout
 ~~~~~~~~~~~
