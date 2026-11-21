@@ -965,6 +965,10 @@ if (REMORA_ENABLE_PNETCDF)
         compose_test_input(${test} TidalBoundary)
         add_test_equiv(${test} reference "remora_exec" "plt_tides00004" "plt_reference00004")
     endforeach ()
+    # No Flather side, so the tide file must change nothing
+    compose_test_input(TidalBoundary_withheld TidalBoundary)
+    add_test_equiv(TidalBoundary_withheld reference "remora_exec" "plt_tides00004"
+                   "plt_reference00004")
     compose_test_input(TidalBoundary_unused TidalBoundary)
     add_test_log(TidalBoundary_unused "remora_exec"
                  "no tides on the West boundary, because its normal barotropic velocity (ubar) is not flather")
