@@ -1270,7 +1270,10 @@ REMORA::convert_inv_days_to_inv_s (MultiFab* mf) {
     for ( MFIter mfi(*mf, TilingIfNotGPU()); mfi.isValid(); ++mfi )
     {
         Array4<Real> const& arr = mf->array(mfi);
-        Box bx = mfi.growntilebox(IntVect(NGROW,NGROW,0));
+        // All of the ghost cells: the radiation boundary conditions average the coefficient onto
+        // a face from the cells on either side, which at the end of a box reaches the outermost
+        // ghost layer
+        Box bx = mfi.growntilebox(mf->nGrowVect());
         ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
             arr(i,j,k) *= inv_days_to_inv_s;
         });

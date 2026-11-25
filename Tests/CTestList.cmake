@@ -986,6 +986,15 @@ endif ()
 compose_test_input(TidalBoundary_type_abort TidalBoundary)
 add_test_abort(TidalBoundary_type_abort "remora_exec" "remora.tide_type must be none or netcdf")
 
+# Radiation conditions with nudging, with momentum nudging coefficients read from a file in
+# 1/day, on sides cut into several boxes. The boundary fill reads the coefficient in the
+# outermost ghost layer, so all of the ghost cells have to be converted to 1/s: a coefficient
+# left in 1/day makes the fill overshoot by a factor of about 1000 per step, and the overflow
+# trap stops the run.
+if (REMORA_ENABLE_PNETCDF)
+  add_test_run(BC_nudg_coeff_ghosts BC_nudg_coeff_ghosts "remora_exec" "")
+endif ()
+
 #=============================================================================
 # Barotropic substep count
 #
